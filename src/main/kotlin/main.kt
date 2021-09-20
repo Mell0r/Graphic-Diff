@@ -1,5 +1,9 @@
+import java.awt.Component
+import java.awt.Font
 import java.io.File
+import javax.swing.*
 import kotlin.math.max
+
 
 enum class Color(val ansi: String) {
     GREEN("\u001B[32m"),
@@ -15,27 +19,105 @@ class TextChange(val type: ChangeType, val index: Int, val edit: String)
 
 fun getTextFormFile(path: String) = File(path).readLines().toTypedArray()
 
-fun readText(args: Array<String>, textName: String, indInArgs: Int) = if (args.isNotEmpty()) {
-    getTextFormFile(args[indInArgs])
-} else {
-    println("Please, enter name or path of the $textName text:")
-    var inputSuccess = false
-    var path = ""
-    while (!inputSuccess) {
-        var input = readLine()
-        inputSuccess = if (input.isNullOrBlank()) {
-            false
-        } else {
-            if (input[0] != '.')
-                input = "src/test/$input"
-            File(input).exists()
-        }
-        if (!inputSuccess)
-            println("Wrong input, please, try again:")
-        else
-            path = input!! //if input was null, inputSuccess
+class MainFrame: JFrame("Difference calculator") {
+    private fun showErrorDialog(message : String) {
+        JOptionPane.showMessageDialog( this, message, "Error", JOptionPane.ERROR_MESSAGE)
     }
-    getTextFormFile(path)
+
+    private fun showStartFrame() { // Создание панели и вывод содержимого на экран
+        val contents = JPanel()
+        contents.layout = BoxLayout(contents, BoxLayout.PAGE_AXIS)
+        contents.add(originLabel)
+        contents.add(originTextField)
+        contents.add(redactedLabel)
+        contents.add(redactedTextField)
+        contents.add(calculateButton)
+        contentPane = contents
+        setSize(500, 170)
+        isVisible = true
+    }
+    // Текстовые поля
+    private val originTextField: JTextField
+    private val redactedTextField: JTextField
+    // Подписи
+    private val originLabel: JLabel
+    private val redactedLabel: JLabel
+    // Кнопки
+    private val calculateButton = JButton("Calculate!")
+    init {
+        defaultCloseOperation = EXIT_ON_CLOSE
+        // Инициализация текстовых полей
+        originTextField = JTextField(45)
+        redactedTextField = JTextField(45)
+        // Инициализация подписей
+        originLabel = JLabel("Write name of origin text here:")
+        redactedLabel = JLabel("Write name of redacted text here:")
+        // Настройка шрифта
+        originTextField.font = Font("Dialog", Font.PLAIN, 14)
+        originLabel.font = Font("Dialog", Font.PLAIN, 15)
+        redactedTextField.font = Font("Dialog", Font.PLAIN, 14)
+        redactedLabel.font = Font("Dialog", Font.PLAIN, 15)
+        calculateButton.font = Font("Dialog", Font.PLAIN, 20)
+        //Настройка расположения
+        originTextField.alignmentX = Component.CENTER_ALIGNMENT
+        originLabel.alignmentX = Component.CENTER_ALIGNMENT
+        redactedTextField.alignmentX = Component.CENTER_ALIGNMENT
+        redactedLabel.alignmentX = Component.CENTER_ALIGNMENT
+        calculateButton.alignmentX = Component.CENTER_ALIGNMENT
+        // Слушатель окончания ввода
+        calculateButton.addActionListener {
+            val originPath = originTextField.text
+            val redactedPath = redactedTextField.text
+            if (!File(originPath).exists())
+            {
+                if (!File(redactedPath).exists())
+                    showErrorDialog("Wrong name of origin and redacted files. Please, fix it and try again.")
+                else
+                    showErrorDialog("Wrong name of origin text. Please, fix it and try again.")
+            }
+            else if (!File(redactedPath).exists()) {
+                showErrorDialog("Wrong name of redacted text. Please, fix it and try again.")
+            }
+            else {
+                val originText = getTextFormFile(originPath)
+                val redactedText = getTextFormFile(redactedPath)
+                val diffResultArea = JTextArea()
+                diffResultArea.isEditable = false
+                //Print diff
+                val diff = calcDiff(originText, redactedText)
+                var insertedPrev = false
+                for (change in diff) {
+                    if (change.type == ChangeType.INSERT) {
+                        when {
+                            insertedPrev -> {
+                                diffResultArea.append(change.edit)
+                                diffResultArea.append("\n")
+                            }
+                            change.index <= originText.size -> {
+                                diffResultArea.append("Inserted before line ${change.index}:\n")
+                                diffResultArea.append(change.edit)
+                                diffResultArea.append("\n")
+                            }
+                            else -> {
+                                diffResultArea.append("Inserted after the end of text:\n")
+                                diffResultArea.append(change.edit)
+                                diffResultArea.append("\n")
+                            }
+                        }
+                        insertedPrev = true
+                    } else {
+                        diffResultArea.append("Deleted line ${change.index}: \n")
+                        diffResultArea.append(change.edit)
+                        diffResultArea.append("\n")
+                        insertedPrev = false
+                    }
+                }
+                contentPane = diffResultArea
+                isVisible = true
+            }
+        }
+        showStartFrame()
+    }
 }
 
 fun getLongestCommonSubSeq(text1: Array<String>, text2: Array<String>): Array<Int> {
@@ -66,9 +148,9 @@ fun getLongestCommonSubSeq(text1: Array<String>, text2: Array<String>): Array<In
     return commonIndices.asReversed().toTypedArray()
 }
 
-fun printlnInColor(output: String, color: Color) {
-    println(color.ansi + output + Color.RESET.ansi)
-}
+//fun printlnInColor(output: String, color: Color) {
+//    println(color.ansi + output + Color.RESET.ansi)
+//}
 
 fun calcDiff(originText: Array<String>, redactedText: Array<String>): Array<TextChange> {
     val commonIndices = getLongestCommonSubSeq(originText, redactedText)
@@ -90,29 +172,6 @@ fun calcDiff(originText: Array<String>, redactedText: Array<String>): Array<Text
     return diff.toTypedArray()
 }
 
-fun main(args: Array<String>) {
-    val originText = readText(args, "origin", 0)
-    val redactedText = readText(args, "redacted", 1)
-    val diff = calcDiff(originText, redactedText)
-    var insertedPrev = false
-    for (change in diff) {
-        if (change.type == ChangeType.INSERT) {
-            when {
-                insertedPrev -> printlnInColor(change.edit, Color.GREEN)
-                change.index <= originText.size -> {
-                    println("Inserted before line ${change.index}:")
-                    printlnInColor(change.edit, Color.GREEN)
-                }
-                else -> {
-                    println("Inserted after the end of text:")
-                    printlnInColor(change.edit, Color.GREEN)
-                }
-            }
-            insertedPrev = true
-        } else {
-            print("Deleted line ${change.index}: ")
-            printlnInColor(change.edit, Color.RED)
-            insertedPrev = false
-        }
-    }
+fun main() {
+    MainFrame()
 }
